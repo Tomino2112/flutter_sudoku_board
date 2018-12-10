@@ -1,8 +1,8 @@
 name: flutter_sudoku_board
-description: A new Flutter package project.
+description: Sudoku board widget for Flutter. Widget is configurable and maintains board state.
 version: 0.0.1
-author:
-homepage:
+author: Tomas Dostal
+homepage: https://github.com/Tomino2112/flutter_sudoku_board
 
 environment:
   sdk: ">=2.0.0-dev.68.0 <3.0.0"
