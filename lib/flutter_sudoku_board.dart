@@ -12,39 +12,45 @@ import 'dart:math' as Math;
 import 'package:flutter/material.dart';
 
 Cell selected;
-List<CellData> boardData = [];
+List<CellDataProvider> boardData = [];
 List<SudokuBoardHistoryRecord> history = [];
 
 class SudokuBoardHistoryRecord {
-  String values;
-  List<SplayTreeSet<String>> notes;
+  final String values;
+  final List<List<String>> notes;
 
   SudokuBoardHistoryRecord(this.values, this.notes);
 }
 
-class CellData {
+class CellDataProvider {
   String _origValue;
   String _correctValue;
-  String _value;
-  SplayTreeSet<String> notes = new SplayTreeSet();
+  String _currentValue;
+  SplayTreeSet<String> _notes = new SplayTreeSet();
   bool readOnly;
   bool isCorrect = false;
 
-  CellData(String val, { String correctValue, List<String> notes }) {
+  CellDataProvider(String val, { String correctValue, List<String> notes }) {
     _origValue = val;
     _correctValue = correctValue;
     value = val;
     readOnly = _origValue != '.';
 
-    if (notes != null && notes.length > 0){
-      this.notes = SplayTreeSet.from(notes);
+    if (_notes != null && _notes.length > 0){
+      _notes = SplayTreeSet.from(notes);
     }
   }
 
-  String get value => _value;
+  String get value => _currentValue;
+  List<String> get notes => List.from(_notes);
 
   set value(String val){
-    _value = (val == '.') ? '' : val;
+    _currentValue = (val == '.') ? '' : val;
+  }
+
+  // @todo Should not be here (I think)
+  set notes(List<String> notes) {
+    this._notes = SplayTreeSet.from(notes);
   }
 
   bool updateValue(String val) {
@@ -52,10 +58,9 @@ class CellData {
       return false;
     }
 
-    value = (val == value) ? '' : val;
+    _currentValue = (val == _currentValue) ? '' : val;
 
     isCorrect = (val == _correctValue);
-    _updateNotesOnNumberInput();
 
     return true;
   }
@@ -65,9 +70,9 @@ class CellData {
       return false;
     }
 
-    return (notes.contains(val))
-        ? notes.remove(val)
-        : notes.add(val);
+    return (_notes.contains(val))
+        ? _notes.remove(val)
+        : _notes.add(val);
   }
 
   reset(){
@@ -75,19 +80,8 @@ class CellData {
       return;
     }
 
-    value = _origValue;
-    notes = new SplayTreeSet();
-  }
-
-  _updateNotesOnNumberInput() {
-    List<int> affectedIndexes = List.generate(9, (i) => i + ((selected.row * 9) - 1) + 1)
-      ..addAll(List.generate(9, (i) => (i * 9) + selected.col));
-
-    boardData.asMap().forEach((index, cellData) {
-      if (affectedIndexes.contains(index)){
-        cellData.notes.remove(value);
-      }
-    });
+    _currentValue = _origValue;
+    _notes = new SplayTreeSet();
   }
 
   @override
@@ -98,10 +92,13 @@ class CellData {
 
 class SudokuBoardController {
   SudokuBoardController({
-    this.historyMax: 10
+    this.historyMax: 10,
+    this.updateNotesOnNumberInput: true
   });
 
   final int historyMax;
+  final bool updateNotesOnNumberInput;
+
   Function boardRefresh = (){};
 
   onNumberInput(int number) {
@@ -109,12 +106,18 @@ class SudokuBoardController {
       return;
     }
 
-    CellData cellData = boardData[(selected.row * 9) + selected.col];
+    CellDataProvider cellData = boardData[(selected.row * 9) + selected.col];
 
-    _updateHistory();
+    _addToHistory();
 
     if (cellData.updateValue(number.toString())){
+      if (updateNotesOnNumberInput) {
+        _updateNotesOnNumberInput(number);
+      }
+
       boardRefresh();
+
+      // @todo call a callback something like callback(cell, oldValue, newValue, status) or just return ?
     } else {
       // @todo Not ideal... but we need to remove from history what we just added
       history.removeLast();
@@ -126,9 +129,9 @@ class SudokuBoardController {
       return;
     }
 
-    CellData cellData = boardData[(selected.row * 9) + selected.col];
+    CellDataProvider cellData = boardData[(selected.row * 9) + selected.col];
 
-    _updateHistory();
+    _addToHistory();
 
     if (cellData.updateNote(number.toString())){
       boardRefresh();
@@ -149,7 +152,7 @@ class SudokuBoardController {
 
     List<String> values = historyRecord.values.split('');
 
-    boardData.asMap().forEach((int i, CellData c){
+    boardData.asMap().forEach((int i, CellDataProvider c){
       c.value = values[i];
       c.notes = historyRecord.notes[i];
     });
@@ -162,33 +165,41 @@ class SudokuBoardController {
       return;
     }
 
-    CellData cellData = boardData[(selected.row * 9) + selected.col];
+    CellDataProvider cellData = boardData[(selected.row * 9) + selected.col];
     cellData.reset();
 
     boardRefresh();
   }
 
-  _updateHistory(){
+  // @todo onComplete() - whole board completed
+
+  _addToHistory(){
     if (history.length >= historyMax) {
       history.removeAt(0);
     }
 
     String values = '';
-    List<SplayTreeSet<String>> notes = [];
+    List<List<String>> notes = [];
 
     boardData.forEach((cellData) {
       // @todo better or not to use StringBuffer?
       // @todo to get values as string we could also do `boardData.join('')` but since we are iterating... ?
       values += cellData.toString();
-      notes.add(SplayTreeSet.from(cellData.notes));
+      notes.add(cellData.notes);
     });
 
-    history.add(
-        SudokuBoardHistoryRecord(
-            values,
-            notes
-        )
-    );
+    history.add(SudokuBoardHistoryRecord(values, notes));
+  }
+
+  _updateNotesOnNumberInput(value) {
+    List<int> affectedIndexes = List.generate(9, (i) => i + ((selected.row * 9) - 1) + 1)
+      ..addAll(List.generate(9, (i) => (i * 9) + selected.col));
+
+    boardData.asMap().forEach((index, cellData) {
+      if (affectedIndexes.contains(index)){
+        cellData.notes = cellData.notes..remove(value);
+      }
+    });
   }
 }
 
@@ -214,7 +225,7 @@ class SudokuBoard extends StatefulWidget {
   parseData() {
     data.split('').asMap().forEach((index, value) {
       boardData.add(
-          CellData(
+          CellDataProvider(
               value,
               correctValue: (solution.isNotEmpty) ? solution[index] : null
           )
@@ -276,7 +287,7 @@ class _SudokuBoardState extends State<SudokuBoard> {
 
       for(int j=0; j < 9; j++){
         int cellIndex = (i * 9) + j;
-        CellData cellData = boardData[cellIndex];
+        CellDataProvider cellData = boardData[cellIndex];
 
         final Cell cell = Cell(
             row: i,
